@@ -1,0 +1,324 @@
+
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PEP 676 – PEP Infrastructure Process | peps.python.org</title>
+    <link rel="shortcut icon" href="../_static/py.png"/>
+    <link rel="stylesheet" href="../_static/style.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/mq.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <meta name="description" content="Python Enhancement Proposals (PEPs)"/>
+</head>
+<body>
+    <section id="pep-page-section">
+        <header>
+            <h1>Python Enhancement Proposals</h1>
+            <ul class="breadcrumbs">
+                <li><a href="https://www.python.org/" title="The Python Programming Language">Python</a> &raquo; </li>
+                <li><a href="../pep-0000/">PEP Index</a> &raquo; </li>
+                <li>PEP 676 – PEP Infrastructure Process</li>
+            </ul>
+        </header>
+        <article>
+            <section id="pep-content">
+<h1 class="page-title">PEP 676 – PEP Infrastructure Process</h1>
+<dl class="rfc2822 field-list simple">
+<dt class="field-odd">PEP</dt>
+<dd class="field-odd">676</dd>
+<dt class="field-even">Title</dt>
+<dd class="field-even">PEP Infrastructure Process</dd>
+<dt class="field-odd">Author</dt>
+<dd class="field-odd">Adam Turner &lt;python&#32;&#97;t&#32;quite.org.uk&gt;</dd>
+<dt class="field-even">Sponsor</dt>
+<dd class="field-even">Mariatta &lt;mariatta&#32;&#97;t&#32;python.org&gt;</dd>
+<dt class="field-odd">Discussions-To</dt>
+<dd class="field-odd"><a class="reference external" href="https://discuss.python.org/t/10774">https://discuss.python.org/t/10774</a></dd>
+<dt class="field-even">Status</dt>
+<dd class="field-even">Draft</dd>
+<dt class="field-odd">Type</dt>
+<dd class="field-odd">Process</dd>
+<dt class="field-even">Created</dt>
+<dd class="field-even">01-Nov-2021</dd>
+<dt class="field-odd">Post-History</dt>
+<dd class="field-odd">23-Sep-2021</dd>
+</dl>
+<hr class="docutils" />
+<section id="contents">
+<h2>Contents</h2>
+<ul class="simple">
+<li><a class="reference internal" href="#abstract">Abstract</a></li>
+<li><a class="reference internal" href="#motivation">Motivation</a></li>
+<li><a class="reference internal" href="#rationale">Rationale</a><ul>
+<li><a class="reference internal" href="#simplifying-and-centralising-infrastructure">Simplifying and Centralising Infrastructure</a></li>
+<li><a class="reference internal" href="#quality-of-life-improvements-and-resolving-issues">Quality-of-Life Improvements and Resolving Issues</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#specification">Specification</a></li>
+<li><a class="reference internal" href="#backwards-compatibility">Backwards Compatibility</a></li>
+<li><a class="reference internal" href="#security-implications">Security Implications</a></li>
+<li><a class="reference internal" href="#how-to-teach-this">How to Teach This</a></li>
+<li><a class="reference internal" href="#reference-implementation">Reference Implementation</a></li>
+<li><a class="reference internal" href="#rejected-ideas">Rejected Ideas</a></li>
+<li><a class="reference internal" href="#open-issues">Open Issues</a></li>
+<li><a class="reference internal" href="#acknowledgements">Acknowledgements</a></li>
+<li><a class="reference internal" href="#footnotes">Footnotes</a></li>
+<li><a class="reference internal" href="#id18">References</a></li>
+<li><a class="reference internal" href="#copyright">Copyright</a></li>
+</ul>
+</section>
+<section id="abstract">
+<h2><a class="toc-backref" href="#abstract">Abstract</a></h2>
+<p>This PEP addresses the infrastructure around rendering PEP files from
+<a class="reference external" href="https://docutils.sourceforge.io/rst.html">reStructuredText</a> <a class="footnote-reference brackets" href="#id44" id="id45">17</a> files to HTML webpages. We aim to specify a self-contained
+and maintainable solution for PEP readers, authors, and editors.</p>
+</section>
+<section id="motivation">
+<h2><a class="toc-backref" href="#motivation">Motivation</a></h2>
+<p>As of November 2021, Python Enhancement Proposals (PEPs) are rendered in a
+multi-system, multi-stage process. A continuous integration (CI) task runs a
+<a class="reference external" href="https://docutils.sourceforge.io">docutils</a> <a class="footnote-reference brackets" href="#id21" id="id22">10</a> script to render all PEP files individually. The CI task then uploads
+a tar archive to a server, where it is retrieved and rendered into the
+<a class="reference external" href="https://www.python.org">python.org</a> <a class="footnote-reference brackets" href="#id30" id="id31">14</a> website periodically.</p>
+<p>This places a constraint on the <a class="reference external" href="https://www.python.org">python.org</a> <a class="footnote-reference brackets" href="#id30" id="id32">14</a> website to handle raw HTML
+uploads and handle PEP rendering, and makes the appropriate place to raise
+issues unclear in some cases <a class="footnote-reference brackets" href="#id10" id="id1">1</a>.</p>
+<p>This PEP provides a specification for self-contained rendering of PEPs. This
+would:</p>
+<ul class="simple">
+<li>reduce the amount of distributed configuration for supporting PEPs</li>
+<li>enable quality-of-life improvements for those who read, write, and review
+PEPs</li>
+<li>solve a number of outstanding issues, and lay the path for improvements</li>
+<li>save volunteer maintainers’ time</li>
+</ul>
+<p>We propose that PEPs are accessed through <a class="reference external" href="https://peps.python.org/">peps.python.org</a> <a class="footnote-reference brackets" href="#id25" id="id26">12</a> at the top-level
+namespace (for example <a class="reference external" href="https://peps.python.org/pep-0008/">peps.python.org/pep-0008/</a> <a class="footnote-reference brackets" href="#id28" id="id29">13</a>), and that all custom
+tooling to support rendering PEPs is hosted in the <a class="reference external" href="https://github.com/python/peps">python/peps</a> <a class="footnote-reference brackets" href="#id37" id="id38">15</a> repository.</p>
+</section>
+<section id="rationale">
+<h2><a class="toc-backref" href="#rationale">Rationale</a></h2>
+<section id="simplifying-and-centralising-infrastructure">
+<h3><a class="toc-backref" href="#simplifying-and-centralising-infrastructure">Simplifying and Centralising Infrastructure</a></h3>
+<p>As of November 2021, to locally render a PEP file, a PEP author or editor needs
+to create a full local instance of the <a class="reference external" href="https://www.python.org">python.org</a> <a class="footnote-reference brackets" href="#id30" id="id33">14</a> website and run a number
+of disparate scripts, following <a class="reference external" href="https://pythondotorg.readthedocs.io/pep_generation.html">documentation</a> <a class="footnote-reference brackets" href="#id19" id="id20">9</a> that lives outside of the
+<a class="reference external" href="https://github.com/python/peps">python/peps</a> <a class="footnote-reference brackets" href="#id37" id="id39">15</a> repository.</p>
+<p>The proposed implementation provides a single <a class="reference external" href="https://www.gnu.org/software/make/manual/make.html#Introduction">Makefile</a> <a class="footnote-reference brackets" href="#id23" id="id24">11</a> and a Python script to
+render all PEP files, with options to target a web-server or local filesystem
+environment.</p>
+<p>Using a single repository to host all tooling will clarify where to raise
+issues, reducing volunteer time spent in triage.</p>
+<p>Simplified and centralised tooling may also reduce the barrier to entry to
+further improvements, as the scope of the PEP rendering infrastructure is well
+defined.</p>
+</section>
+<section id="quality-of-life-improvements-and-resolving-issues">
+<h3><a class="toc-backref" href="#quality-of-life-improvements-and-resolving-issues">Quality-of-Life Improvements and Resolving Issues</a></h3>
+<p>There are several requests for additional features in reading PEPs, such as:</p>
+<ul class="simple">
+<li>syntax highlighting <a class="footnote-reference brackets" href="#id11" id="id2">2</a></li>
+<li>use of <code class="docutils literal notranslate"><span class="pre">..</span> <span class="pre">code-block::</span></code> directives <a class="footnote-reference brackets" href="#id11" id="id3">2</a></li>
+<li>support for SVG images <a class="footnote-reference brackets" href="#id12" id="id4">3</a></li>
+<li>typographic quotation marks <a class="footnote-reference brackets" href="#id13" id="id5">4</a></li>
+<li>additional footer information <a class="footnote-reference brackets" href="#id14" id="id6">5</a></li>
+<li>intersphinx functionality <a class="footnote-reference brackets" href="#id15" id="id7">6</a></li>
+</ul>
+<p>These are “easy wins” from this proposal, and would serve to improve the
+quality-of-life for consumers of PEPs (including reviewers and writers). For
+example, the reference implementation no longer requires a scheduled render
+process to run, instead initiating rendering on every commit to the
+<a class="reference external" href="https://github.com/python/peps">python/peps</a> <a class="footnote-reference brackets" href="#id37" id="id40">15</a> repository.</p>
+<p>Equally, there are a small number of broken items, for example list styles not
+being respected or support for updating images being challenging with the
+system <a class="footnote-reference brackets" href="#id16" id="id8">7</a>. These would be solved by default in the proposal.</p>
+<p>Commercial providers such as <a class="reference external" href="https://readthedocs.org">Read the Docs</a> <a class="footnote-reference brackets" href="#id42" id="id43">16</a> can additionally enhance this
+experience, for example by providing rendered previews of changes in pull
+requests.</p>
+</section>
+</section>
+<section id="specification">
+<h2><a class="toc-backref" href="#specification">Specification</a></h2>
+<p>The proposed specification for rendering the PEP files to HTML is as per the
+<a class="reference internal" href="#reference-implementation">reference implementation</a>.</p>
+<p>That the HTML files should be made available under <a class="reference external" href="https://peps.python.org/">peps.python.org</a> <a class="footnote-reference brackets" href="#id25" id="id27">12</a>. The
+rendered files may be hosted just as static files, and behind a content
+delivery network (CDN).</p>
+<p>The following redirect rules must be created from the <a class="reference external" href="https://www.python.org">python.org</a> <a class="footnote-reference brackets" href="#id30" id="id34">14</a> domain:</p>
+<ul class="simple">
+<li>/peps/            -&gt; <a class="reference external" href="https://peps.python.org/">https://peps.python.org/</a></li>
+<li>/dev/peps/        -&gt; <a class="reference external" href="https://peps.python.org/">https://peps.python.org/</a></li>
+<li>/peps/(.*).html  -&gt; <a class="reference external" href="https://peps.python.org/$1">https://peps.python.org/$1</a></li>
+<li>/dev/peps/(.*)    -&gt; <a class="reference external" href="https://peps.python.org/$1">https://peps.python.org/$1</a></li>
+</ul>
+<div class="highlight-nginx notranslate"><div class="highlight"><pre><span></span><span class="k">location</span> <span class="p">~</span> <span class="sr">^/dev/peps/?(.*)$</span> <span class="p">{</span>
+    <span class="kn">return</span> <span class="mi">308</span> <span class="s">https://peps.python.org/</span><span class="nv">$1/</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">location</span> <span class="p">~</span> <span class="sr">^/peps/(.*)\.html$</span> <span class="p">{</span>
+    <span class="kn">return</span> <span class="mi">308</span> <span class="s">https://peps.python.org/</span><span class="nv">$1/</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">location</span> <span class="s">^/(dev/)?peps(/.*)?</span>$ <span class="p">{</span>
+    <span class="kn">return</span> <span class="mi">308</span> <span class="s">https://peps.python.org/</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Redirects must be implemented to preserve <a class="reference external" href="https://url.spec.whatwg.org/#concept-url-fragment">URL fragments</a> <a class="footnote-reference brackets" href="#id46" id="id47">18</a> for backward
+compatability purposes.</p>
+</section>
+<section id="backwards-compatibility">
+<h2><a class="toc-backref" href="#backwards-compatibility">Backwards Compatibility</a></h2>
+<p>Due to server-side redirects to new canonical URLs, there are no backwards
+compatability concerns. Links in previously published materials referring to
+any old URL scheme will be guaranteed to work.</p>
+</section>
+<section id="security-implications">
+<h2><a class="toc-backref" href="#security-implications">Security Implications</a></h2>
+<p>No security implications, and the main <a class="reference external" href="https://www.python.org">python.org</a> <a class="footnote-reference brackets" href="#id30" id="id35">14</a> website will no longer
+take raw HTML uploads, closing a potential threat vector.</p>
+</section>
+<section id="how-to-teach-this">
+<h2><a class="toc-backref" href="#how-to-teach-this">How to Teach This</a></h2>
+<p>The new canonical URLs will be publicised in the documentation. However, this
+is mainly a backend infrastructure change, and there should be minimal
+end-user impact.</p>
+</section>
+<section id="reference-implementation">
+<h2><a class="toc-backref" href="#reference-implementation">Reference Implementation</a></h2>
+<p>The proposed implementation has been merged into the <a class="reference external" href="https://github.com/python/peps">python/peps</a> <a class="footnote-reference brackets" href="#id37" id="id41">15</a> repository
+in a series of pull requests <a class="footnote-reference brackets" href="#id17" id="id9">8</a>. This automatically renders all PEPs on every
+commit.</p>
+</section>
+<section id="rejected-ideas">
+<h2><a class="toc-backref" href="#rejected-ideas">Rejected Ideas</a></h2>
+<p>It would likely be possible to amend the current (as of November 2021)
+rendering process to include a lot of the quality-of-life improvements and
+issue mitigations mentioned above. However, we do not believe that this would
+solve the distributed tooling issue.</p>
+<p>It would be possible to use the output from the proposed rendering system and
+import it into <a class="reference external" href="https://www.python.org">python.org</a> <a class="footnote-reference brackets" href="#id30" id="id36">14</a>. We would argue however that this would be the
+worst of both worlds, as a great deal of complexity is added, and none is
+removed.</p>
+</section>
+<section id="open-issues">
+<h2><a class="toc-backref" href="#open-issues">Open Issues</a></h2>
+<p>None.</p>
+</section>
+<section id="acknowledgements">
+<h2><a class="toc-backref" href="#acknowledgements">Acknowledgements</a></h2>
+<p>Thanks to Hugo van Kemenade, Pablo Galindo Salgado, and Éric Araujo for support
+since April 2020.</p>
+</section>
+<section id="footnotes">
+<h2><a class="toc-backref" href="#footnotes">Footnotes</a></h2>
+<dl class="footnote brackets">
+<dt class="label" id="id10"><span class="brackets"><a class="fn-backref" href="#id1">1</a></span></dt>
+<dd>For example,
+<a class="reference external" href="https://github.com/python/pythondotorg/issues/1204">pythondotorg#1024</a>,
+<a class="reference external" href="https://github.com/python/pythondotorg/issues/1038">pythondotorg#1038</a>,
+<a class="reference external" href="https://github.com/python/pythondotorg/issues/1387">pythondotorg#1387</a>,
+<a class="reference external" href="https://github.com/python/pythondotorg/issues/1388">pythondotorg#1388</a>,
+<a class="reference external" href="https://github.com/python/pythondotorg/issues/1393">pythondotorg#1393</a>,
+<a class="reference external" href="https://github.com/python/pythondotorg/issues/1564">pythondotorg#1564</a>,
+<a class="reference external" href="https://github.com/python/pythondotorg/issues/1913">pythondotorg#1913</a>,</dd>
+<dt class="label" id="id11"><span class="brackets">2</span><span class='fn-backref''><em> (<a href='#id2'>1</a>, <a href='#id3'>2</a>) </em></span></dt>
+<dd>Requested: <a class="reference external" href="https://github.com/python/pythondotorg/pull/1063">pythondotorg#1063</a>,
+<a class="reference external" href="https://github.com/python/pythondotorg/issues/1206">pythondotorg#1206</a>,
+<a class="reference external" href="https://github.com/python/pythondotorg/pull/1638">pythondotorg#1638</a>,
+<a class="reference external" href="https://github.com/python/peps/issues/159">peps#159</a>,
+<a class="reference external" href="https://github.com/python/peps/pull/1571#discussion_r478701944">comment in peps#1571</a>,
+<a class="reference external" href="https://github.com/python/peps/pull/1577">peps#1577</a>,</dd>
+<dt class="label" id="id12"><span class="brackets"><a class="fn-backref" href="#id4">3</a></span></dt>
+<dd>Requested: <a class="reference external" href="https://github.com/python/peps/issues/701">peps#701</a></dd>
+<dt class="label" id="id13"><span class="brackets"><a class="fn-backref" href="#id5">4</a></span></dt>
+<dd>Requested: <a class="reference external" href="https://github.com/python/peps/issues/165">peps#165</a></dd>
+<dt class="label" id="id14"><span class="brackets"><a class="fn-backref" href="#id6">5</a></span></dt>
+<dd>Requested: <a class="reference external" href="https://github.com/python/pythondotorg/issues/1564">pythondotorg#1564</a></dd>
+<dt class="label" id="id15"><span class="brackets"><a class="fn-backref" href="#id7">6</a></span></dt>
+<dd>Requested: <a class="reference external" href="https://github.com/python/peps/issues/2#issuecomment-339195595">comment in peps#2</a></dd>
+<dt class="label" id="id16"><span class="brackets"><a class="fn-backref" href="#id8">7</a></span></dt>
+<dd>As of November 2021, see
+<a class="reference external" href="https://github.com/python/peps/issues/1387">peps#1387</a>,
+<a class="reference external" href="https://github.com/python/pythondotorg/issues/824">pythondotorg#824</a>,
+<a class="reference external" href="https://github.com/python/pythondotorg/pull/1556">pythondotorg#1556</a>,</dd>
+<dt class="label" id="id17"><span class="brackets"><a class="fn-backref" href="#id9">8</a></span></dt>
+<dd>Implementation PRs:
+<a class="reference external" href="https://github.com/python/peps/pull/1930">peps#1930</a>,
+<a class="reference external" href="https://github.com/python/peps/pull/1931">peps#1931</a>,
+<a class="reference external" href="https://github.com/python/peps/pull/1932">peps#1932</a>,
+<a class="reference external" href="https://github.com/python/peps/pull/1933">peps#1933</a>,
+<a class="reference external" href="https://github.com/python/peps/pull/1934">peps#1934</a></dd>
+</dl>
+</section>
+<section id="id18">
+<h2><a class="toc-backref" href="#id18">References</a></h2>
+<dl class="footnote brackets">
+<dt class="label" id="id19"><span class="brackets"><a class="fn-backref" href="#id20">9</a></span></dt>
+<dd><a class="reference external" href="https://pythondotorg.readthedocs.io/pep_generation.html">https://pythondotorg.readthedocs.io/pep_generation.html</a></dd>
+<dt class="label" id="id21"><span class="brackets"><a class="fn-backref" href="#id22">10</a></span></dt>
+<dd><a class="reference external" href="https://docutils.sourceforge.io">https://docutils.sourceforge.io</a></dd>
+<dt class="label" id="id23"><span class="brackets"><a class="fn-backref" href="#id24">11</a></span></dt>
+<dd><a class="reference external" href="https://www.gnu.org/software/make/manual/make.html#Introduction">https://www.gnu.org/software/make/manual/make.html#Introduction</a></dd>
+<dt class="label" id="id25"><span class="brackets">12</span><span class='fn-backref''><em> (<a href='#id26'>1</a>, <a href='#id27'>2</a>) </em></span></dt>
+<dd><a class="reference external" href="https://peps.python.org/">https://peps.python.org/</a></dd>
+<dt class="label" id="id28"><span class="brackets"><a class="fn-backref" href="#id29">13</a></span></dt>
+<dd><a class="reference external" href="https://peps.python.org/pep-0008/">https://peps.python.org/pep-0008/</a></dd>
+<dt class="label" id="id30"><span class="brackets">14</span><span class='fn-backref''><em> (<a href='#id31'>1</a>, <a href='#id32'>2</a>, <a href='#id33'>3</a>, <a href='#id34'>4</a>, <a href='#id35'>5</a>, <a href='#id36'>6</a>) </em></span></dt>
+<dd><a class="reference external" href="https://www.python.org">https://www.python.org</a></dd>
+<dt class="label" id="id37"><span class="brackets">15</span><span class='fn-backref''><em> (<a href='#id38'>1</a>, <a href='#id39'>2</a>, <a href='#id40'>3</a>, <a href='#id41'>4</a>) </em></span></dt>
+<dd><a class="reference external" href="https://github.com/python/peps">https://github.com/python/peps</a></dd>
+<dt class="label" id="id42"><span class="brackets"><a class="fn-backref" href="#id43">16</a></span></dt>
+<dd><a class="reference external" href="https://readthedocs.org">https://readthedocs.org</a></dd>
+<dt class="label" id="id44"><span class="brackets"><a class="fn-backref" href="#id45">17</a></span></dt>
+<dd><a class="reference external" href="https://docutils.sourceforge.io/rst.html">https://docutils.sourceforge.io/rst.html</a></dd>
+<dt class="label" id="id46"><span class="brackets"><a class="fn-backref" href="#id47">18</a></span></dt>
+<dd><a class="reference external" href="https://url.spec.whatwg.org/#concept-url-fragment">https://url.spec.whatwg.org/#concept-url-fragment</a></dd>
+</dl>
+</section>
+<section id="copyright">
+<h2><a class="toc-backref" href="#copyright">Copyright</a></h2>
+<p>This document is placed in the public domain or under the
+CC0-1.0-Universal license, whichever is more permissive.</p>
+</section>
+</section>
+<p>Source: <a class="reference external" href="https://github.com/python/peps/blob/master/pep-0676.rst">https://github.com/python/peps/blob/master/pep-0676.rst</a></p>
+<p>Last modified: <a class="reference external" href="https://github.com/python/peps/commits/master/pep-0676.rst">2021-12-02 19:57:42 GMT</a></p>
+
+        </article>
+        <nav id="pep-sidebar">
+            <h2>Contents</h2>
+            <ul>
+<li><a class="reference internal" href="#">PEP 676 – PEP Infrastructure Process</a><ul>
+<li><a class="reference internal" href="#contents">Contents</a></li>
+<li><a class="reference internal" href="#abstract">Abstract</a></li>
+<li><a class="reference internal" href="#motivation">Motivation</a></li>
+<li><a class="reference internal" href="#rationale">Rationale</a><ul>
+<li><a class="reference internal" href="#simplifying-and-centralising-infrastructure">Simplifying and Centralising Infrastructure</a></li>
+<li><a class="reference internal" href="#quality-of-life-improvements-and-resolving-issues">Quality-of-Life Improvements and Resolving Issues</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#specification">Specification</a></li>
+<li><a class="reference internal" href="#backwards-compatibility">Backwards Compatibility</a></li>
+<li><a class="reference internal" href="#security-implications">Security Implications</a></li>
+<li><a class="reference internal" href="#how-to-teach-this">How to Teach This</a></li>
+<li><a class="reference internal" href="#reference-implementation">Reference Implementation</a></li>
+<li><a class="reference internal" href="#rejected-ideas">Rejected Ideas</a></li>
+<li><a class="reference internal" href="#open-issues">Open Issues</a></li>
+<li><a class="reference internal" href="#acknowledgements">Acknowledgements</a></li>
+<li><a class="reference internal" href="#footnotes">Footnotes</a></li>
+<li><a class="reference internal" href="#id18">References</a></li>
+<li><a class="reference internal" href="#copyright">Copyright</a></li>
+</ul>
+</li>
+</ul>
+
+            <br />
+            <strong><a href="https://github.com/python/peps/blob/master/pep-0676.rst">Page Source (GitHub)</a></strong>
+        </nav>
+    </section>
+    <script src="../_static/doctools.js"></script>
+</body>
+</html>

@@ -1,0 +1,439 @@
+
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PEP 674 – Disallow using macros as l-value | peps.python.org</title>
+    <link rel="shortcut icon" href="../_static/py.png"/>
+    <link rel="stylesheet" href="../_static/style.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/mq.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <meta name="description" content="Python Enhancement Proposals (PEPs)"/>
+</head>
+<body>
+    <section id="pep-page-section">
+        <header>
+            <h1>Python Enhancement Proposals</h1>
+            <ul class="breadcrumbs">
+                <li><a href="https://www.python.org/" title="The Python Programming Language">Python</a> &raquo; </li>
+                <li><a href="../pep-0000/">PEP Index</a> &raquo; </li>
+                <li>PEP 674 – Disallow using macros as l-value</li>
+            </ul>
+        </header>
+        <article>
+            <section id="pep-content">
+<h1 class="page-title">PEP 674 – Disallow using macros as l-value</h1>
+<dl class="rfc2822 field-list simple">
+<dt class="field-odd">PEP</dt>
+<dd class="field-odd">674</dd>
+<dt class="field-even">Title</dt>
+<dd class="field-even">Disallow using macros as l-value</dd>
+<dt class="field-odd">Author</dt>
+<dd class="field-odd">Victor Stinner &lt;vstinner&#32;&#97;t&#32;python.org&gt;</dd>
+<dt class="field-even">Status</dt>
+<dd class="field-even">Draft</dd>
+<dt class="field-odd">Type</dt>
+<dd class="field-odd">Standards Track</dd>
+<dt class="field-even">Created</dt>
+<dd class="field-even">01-Dec-2021</dd>
+<dt class="field-odd">Python-Version</dt>
+<dd class="field-odd">3.11</dd>
+</dl>
+<hr class="docutils" />
+<section id="contents">
+<h2>Contents</h2>
+<ul class="simple">
+<li><a class="reference internal" href="#abstract">Abstract</a></li>
+<li><a class="reference internal" href="#rationale">Rationale</a><ul>
+<li><a class="reference internal" href="#using-a-macro-as-a-l-value">Using a macro as a l-value</a></li>
+<li><a class="reference internal" href="#cpython-nogil-fork">CPython nogil fork</a></li>
+<li><a class="reference internal" href="#hpy-project">HPy project</a></li>
+<li><a class="reference internal" href="#graalvm-python">GraalVM Python</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#specification">Specification</a><ul>
+<li><a class="reference internal" href="#disallow-using-macros-as-l-value">Disallow using macros as l-value</a><ul>
+<li><a class="reference internal" href="#pyobject-and-pyvarobject-macros">PyObject and PyVarObject macros</a></li>
+<li><a class="reference internal" href="#get-macros">“GET” macros</a></li>
+<li><a class="reference internal" href="#as-macros">“AS” macros</a></li>
+<li><a class="reference internal" href="#pyunicode-macros">PyUnicode macros</a></li>
+<li><a class="reference internal" href="#pydatetime-get-macros">PyDateTime “GET” macros</a></li>
+<li><a class="reference internal" href="#pydescr-macros">PyDescr macros</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#port-c-extensions-to-python-3-11">Port C extensions to Python 3.11</a></li>
+<li><a class="reference internal" href="#pytuple-get-item-and-pylist-get-item">PyTuple_GET_ITEM() and PyList_GET_ITEM()</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#backwards-compatibility">Backwards Compatibility</a></li>
+<li><a class="reference internal" href="#rejected-idea-leave-the-macros-as-they-are">Rejected Idea: Leave the macros as they are</a></li>
+<li><a class="reference internal" href="#macros-already-modified">Macros already modified</a></li>
+<li><a class="reference internal" href="#references">References</a></li>
+<li><a class="reference internal" href="#copyright">Copyright</a></li>
+</ul>
+</section>
+<section id="abstract">
+<h2><a class="toc-backref" href="#abstract">Abstract</a></h2>
+<p>Incompatible C API change disallowing using macros as l-value to:</p>
+<ul class="simple">
+<li>Allow evolving CPython internals;</li>
+<li>Ease the C API implementation on other Python implementation;</li>
+<li>Help migrating existing C extensions to the HPy API.</li>
+</ul>
+<p>On the PyPI top 5000 projects, only 14 projects (0.3%) are affected by 4
+macro changes. Moreover, 24 projects just have to regenerate their
+Cython code to use <code class="docutils literal notranslate"><span class="pre">Py_SET_TYPE()</span></code>.</p>
+<p>In practice, the majority of affected projects only have to make two
+changes:</p>
+<ul class="simple">
+<li>Replace <code class="docutils literal notranslate"><span class="pre">Py_TYPE(obj)</span> <span class="pre">=</span> <span class="pre">new_type;</span></code>
+with <code class="docutils literal notranslate"><span class="pre">Py_SET_TYPE(obj,</span> <span class="pre">new_type);</span></code>.</li>
+<li>Replace <code class="docutils literal notranslate"><span class="pre">Py_SIZE(obj)</span> <span class="pre">=</span> <span class="pre">new_size;</span></code>
+with <code class="docutils literal notranslate"><span class="pre">Py_SET_SIZE(obj,</span> <span class="pre">new_size);</span></code>.</li>
+</ul>
+</section>
+<section id="rationale">
+<h2><a class="toc-backref" href="#rationale">Rationale</a></h2>
+<section id="using-a-macro-as-a-l-value">
+<h3><a class="toc-backref" href="#using-a-macro-as-a-l-value">Using a macro as a l-value</a></h3>
+<p>In the Python C API, some functions are implemented as macro because
+writing a macro is simpler than writing a regular function. If a macro
+exposes directly a struture member, it is technically possible to use
+this macro to not only get the structure member but also set it.</p>
+<p>Example with the Python 3.10 <code class="docutils literal notranslate"><span class="pre">Py_TYPE()</span></code> macro:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1">#define Py_TYPE(ob) (((PyObject *)(ob))-&gt;ob_type)</span>
+</pre></div>
+</div>
+<p>This macro can be used as a <strong>r-value</strong> to <strong>get</strong> an object type:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">type</span> <span class="o">=</span> <span class="n">Py_TYPE</span><span class="p">(</span><span class="nb">object</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>It can also be used as <strong>l-value</strong> to <strong>set</strong> an object type:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Py_TYPE</span><span class="p">(</span><span class="nb">object</span><span class="p">)</span> <span class="o">=</span> <span class="n">new_type</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>It is also possible to set an object reference count and an object size
+using <code class="docutils literal notranslate"><span class="pre">Py_REFCNT()</span></code> and <code class="docutils literal notranslate"><span class="pre">Py_SIZE()</span></code> macros.</p>
+<p>Setting directly an object attribute relies on the current exact CPython
+implementation. Implementing this feature in other Python
+implementations can make their C API implementation less efficient.</p>
+</section>
+<section id="cpython-nogil-fork">
+<h3><a class="toc-backref" href="#cpython-nogil-fork">CPython nogil fork</a></h3>
+<p>Sam Gross forked Python 3.9 to remove the GIL: the <a class="reference external" href="https://github.com/colesbury/nogil/">nogil branch</a>. This fork has no
+<code class="docutils literal notranslate"><span class="pre">PyObject.ob_refcnt</span></code> member, but a more elaborated implementation for
+reference counting, and so the <code class="docutils literal notranslate"><span class="pre">Py_REFCNT(obj)</span> <span class="pre">=</span> <span class="pre">new_refcnt;</span></code> code
+fails with a compiler error.</p>
+<p>Merging the nogil fork into the upstream CPython main branch requires
+first to fix this C API compatibility issue. It is a concrete example of
+a Python optimization blocked indirectly by the C API.</p>
+<p>This issue was already fixed in Python 3.10: the <code class="docutils literal notranslate"><span class="pre">Py_REFCNT()</span></code> macro
+has been already modified to disallow using it as a l-value.</p>
+<p>These statements are endorsed by Sam Gross (nogil developer).</p>
+</section>
+<section id="hpy-project">
+<h3><a class="toc-backref" href="#hpy-project">HPy project</a></h3>
+<p>The <a class="reference external" href="https://hpyproject.org/">HPy project</a> is a brand new C API for
+Python using only handles and function calls: handles are opaque,
+structure members cannot be accessed directly, and pointers cannot be
+dereferenced.</p>
+<p>Searching and replacing <code class="docutils literal notranslate"><span class="pre">Py_SET_SIZE()</span></code> is easier and safer than
+searching and replacing some strange macro uses of <code class="docutils literal notranslate"><span class="pre">Py_SIZE()</span></code>.
+<code class="docutils literal notranslate"><span class="pre">Py_SIZE()</span></code> can be semi-mechanically replaced by <code class="docutils literal notranslate"><span class="pre">HPy_Length()</span></code>,
+whereas seeing <code class="docutils literal notranslate"><span class="pre">Py_SET_SIZE()</span></code> would immediately make clear that the
+code needs bigger changes in order to be ported to HPy (for example by
+using <code class="docutils literal notranslate"><span class="pre">HPyTupleBuilder</span></code> or <code class="docutils literal notranslate"><span class="pre">HPyListBuilder</span></code>).</p>
+<p>The fewer internal details exposed via macros, the easier it will be for
+HPy to provide direct equivalents. Any macro that references
+“non-public” interfaces effectively exposes those interfaces publicly.</p>
+<p>These statements are endorsed by Antonio Cuni (HPy developer).</p>
+</section>
+<section id="graalvm-python">
+<h3><a class="toc-backref" href="#graalvm-python">GraalVM Python</a></h3>
+<p>In GraalVM, when a Python object is accessed by the Python C API, the C API
+emulation layer has to wrap the GraalVM objects into wrappers that expose
+the internal structure of the CPython structures (PyObject, PyLongObject,
+PyTypeObject, etc). This is because when the C code accesses it directly or via
+macros, all GraalVM can intercept is a read at the struct offset, which has
+to be mapped back to the representation in GraalVM. The smaller the
+“effective” number of exposed struct members (by replacing macros with
+functions), the simpler GraalVM wrappers can be.</p>
+<p>This PEP alone is not enough to get rid of the wrappers in GraalVM, but it
+is a step towards this long term goal. GraalVM already supports HPy which is a better
+solution in the long term.</p>
+<p>These statements are endorsed by Tim Felgentreff (GraalVM Python developer).</p>
+</section>
+</section>
+<section id="specification">
+<h2><a class="toc-backref" href="#specification">Specification</a></h2>
+<section id="disallow-using-macros-as-l-value">
+<h3><a class="toc-backref" href="#disallow-using-macros-as-l-value">Disallow using macros as l-value</a></h3>
+<section id="pyobject-and-pyvarobject-macros">
+<h4><a class="toc-backref" href="#pyobject-and-pyvarobject-macros">PyObject and PyVarObject macros</a></h4>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">Py_TYPE()</span></code>: <code class="docutils literal notranslate"><span class="pre">Py_SET_TYPE()</span></code> must be used instead</li>
+<li><code class="docutils literal notranslate"><span class="pre">Py_SIZE()</span></code>: <code class="docutils literal notranslate"><span class="pre">Py_SET_SIZE()</span></code> must be used instead</li>
+</ul>
+</section>
+<section id="get-macros">
+<h4><a class="toc-backref" href="#get-macros">“GET” macros</a></h4>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">PyByteArray_GET_SIZE()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyBytes_GET_SIZE()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyCFunction_GET_CLASS()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyCFunction_GET_FLAGS()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyCFunction_GET_FUNCTION()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyCFunction_GET_SELF()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyCell_GET()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyCode_GetNumFree()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDict_GET_SIZE()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyFunction_GET_ANNOTATIONS()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyFunction_GET_CLOSURE()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyFunction_GET_CODE()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyFunction_GET_DEFAULTS()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyFunction_GET_GLOBALS()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyFunction_GET_KW_DEFAULTS()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyFunction_GET_MODULE()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyHeapType_GET_MEMBERS()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyInstanceMethod_GET_FUNCTION()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyList_GET_SIZE()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyMemoryView_GET_BASE()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyMemoryView_GET_BUFFER()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyMethod_GET_FUNCTION()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyMethod_GET_SELF()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PySet_GET_SIZE()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyTuple_GET_SIZE()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_GET_DATA_SIZE()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_GET_LENGTH()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_GET_LENGTH()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_GET_SIZE()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyWeakref_GET_OBJECT()</span></code></li>
+</ul>
+</section>
+<section id="as-macros">
+<h4><a class="toc-backref" href="#as-macros">“AS” macros</a></h4>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">PyByteArray_AS_STRING()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyBytes_AS_STRING()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyFloat_AS_DOUBLE()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_AS_DATA()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_AS_UNICODE()</span></code></li>
+</ul>
+</section>
+<section id="pyunicode-macros">
+<h4><a class="toc-backref" href="#pyunicode-macros">PyUnicode macros</a></h4>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_1BYTE_DATA()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_2BYTE_DATA()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_4BYTE_DATA()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_DATA()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_IS_ASCII()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_IS_COMPACT()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_IS_READY()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_KIND()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_READ()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyUnicode_READ_CHAR()</span></code></li>
+</ul>
+</section>
+<section id="pydatetime-get-macros">
+<h4><a class="toc-backref" href="#pydatetime-get-macros">PyDateTime “GET” macros</a></h4>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_DATE_GET_FOLD()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_DATE_GET_HOUR()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_DATE_GET_MICROSECOND()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_DATE_GET_MINUTE()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_DATE_GET_SECOND()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_DATE_GET_TZINFO()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_DELTA_GET_DAYS()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_DELTA_GET_MICROSECONDS()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_DELTA_GET_SECONDS()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_GET_DAY()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_GET_MONTH()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_GET_YEAR()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_TIME_GET_FOLD()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_TIME_GET_HOUR()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_TIME_GET_MICROSECOND()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_TIME_GET_MINUTE()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_TIME_GET_SECOND()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDateTime_TIME_GET_TZINFO()</span></code></li>
+</ul>
+</section>
+<section id="pydescr-macros">
+<h4><a class="toc-backref" href="#pydescr-macros">PyDescr macros</a></h4>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">PyDescr_NAME()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyDescr_TYPE()</span></code></li>
+</ul>
+</section>
+</section>
+<section id="port-c-extensions-to-python-3-11">
+<h3><a class="toc-backref" href="#port-c-extensions-to-python-3-11">Port C extensions to Python 3.11</a></h3>
+<p>In practice, the majority of projects affected by these PEP only have to
+make two changes:</p>
+<ul class="simple">
+<li>Replace <code class="docutils literal notranslate"><span class="pre">Py_TYPE(obj)</span> <span class="pre">=</span> <span class="pre">new_type;</span></code>
+with <code class="docutils literal notranslate"><span class="pre">Py_SET_TYPE(obj,</span> <span class="pre">new_type);</span></code>.</li>
+<li>Replace <code class="docutils literal notranslate"><span class="pre">Py_SIZE(obj)</span> <span class="pre">=</span> <span class="pre">new_size;</span></code>
+with <code class="docutils literal notranslate"><span class="pre">Py_SET_SIZE(obj,</span> <span class="pre">new_size);</span></code>.</li>
+</ul>
+<p>The <a class="reference external" href="https://github.com/pythoncapi/pythoncapi_compat">pythoncapi_compat project</a> can be used to
+update automatically C extensions: add Python 3.11 support without
+losing support with older Python versions. The project provides a header
+file which provides <code class="docutils literal notranslate"><span class="pre">Py_SET_REFCNT()</span></code>, <code class="docutils literal notranslate"><span class="pre">Py_SET_TYPE()</span></code> and
+<code class="docutils literal notranslate"><span class="pre">Py_SET_SIZE()</span></code> functions to Python 3.8 and older.</p>
+</section>
+<section id="pytuple-get-item-and-pylist-get-item">
+<h3><a class="toc-backref" href="#pytuple-get-item-and-pylist-get-item">PyTuple_GET_ITEM() and PyList_GET_ITEM()</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">PyTuple_GET_ITEM()</span></code> and <code class="docutils literal notranslate"><span class="pre">PyList_GET_ITEM()</span></code> macros are left
+unchanged.</p>
+<p>The code pattern <code class="docutils literal notranslate"><span class="pre">&amp;PyTuple_GET_ITEM(tuple,</span> <span class="pre">0)</span></code> and
+<code class="docutils literal notranslate"><span class="pre">&amp;PyList_GET_ITEM(list,</span> <span class="pre">0)</span></code> is still commonly used to get access to
+the inner <code class="docutils literal notranslate"><span class="pre">PyObject**</span></code> array.</p>
+<p>Changing these macros is out of the scope of this PEP.</p>
+</section>
+</section>
+<section id="backwards-compatibility">
+<h2><a class="toc-backref" href="#backwards-compatibility">Backwards Compatibility</a></h2>
+<p>The proposed C API changes are backward incompatible on purpose.</p>
+<p>At December 1, 2021, a code search on the PyPI top 5000 projects (4760
+projects in practice, others don’t have a source achive) found that
+<a class="reference external" href="https://bugs.python.org/issue45476#msg407456">only 14 projects are affected</a> (0.3%):</p>
+<ul class="simple">
+<li>datatable (1.0.0)</li>
+<li>frozendict (2.1.1)</li>
+<li>guppy3 (3.1.2)</li>
+<li>M2Crypto (0.38.0)</li>
+<li>mecab-python3 (1.0.4)</li>
+<li>mypy (0.910)</li>
+<li>Naked (0.1.31)</li>
+<li>pickle5 (0.0.12)</li>
+<li>pysha3 (1.0.2)</li>
+<li>python-snappy (0.6.0)</li>
+<li>recordclass (0.16.3)</li>
+<li>scipy (1.7.3)</li>
+<li>zodbpickle (2.2.0)</li>
+<li>zstd (1.5.0.2)</li>
+</ul>
+<p>These 14 projects only use 4 macros as l-value:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">PyDescr_NAME()</span></code> and <code class="docutils literal notranslate"><span class="pre">PyDescr_TYPE()</span></code> (2 projects)</li>
+<li><code class="docutils literal notranslate"><span class="pre">Py_SIZE()</span></code> (8 projects)</li>
+<li><code class="docutils literal notranslate"><span class="pre">Py_TYPE()</span></code> (4 projects)</li>
+</ul>
+<p>Moreover, <a class="reference external" href="https://bugs.python.org/issue45476#msg407416">24 projects just have to regenerate their Cython code</a> to use
+<code class="docutils literal notranslate"><span class="pre">Py_SET_TYPE()</span></code>.</p>
+<p>This change does not follow the <a class="reference external" href="../pep-0387">PEP 387</a> deprecation process. There is no
+known way to emit a deprecation warning only when a macro is used as a
+l-value, but not when it’s used differently (ex: as a r-value).</p>
+</section>
+<section id="rejected-idea-leave-the-macros-as-they-are">
+<h2><a class="toc-backref" href="#rejected-idea-leave-the-macros-as-they-are">Rejected Idea: Leave the macros as they are</a></h2>
+<p>The documentation of each function can discourage developers to use
+macros to modify Python objects.</p>
+<p>If these is a need to make an assignment, a setter function can be added
+and the macro documentation can require to use the setter function. For
+example, a <code class="docutils literal notranslate"><span class="pre">Py_SET_TYPE()</span></code> function has been added to Python 3.9 and
+the <code class="docutils literal notranslate"><span class="pre">Py_TYPE()</span></code> documentation now requires to use the
+<code class="docutils literal notranslate"><span class="pre">Py_SET_TYPE()</span></code> function to set an object type.</p>
+<p>If developers use macros as l-value, it’s their responsibility when
+their code breaks, not the Python responsibility. We are operating under
+the consenting adults principle: we expect users of the Python C API to
+use it as documented and expect them to take care of the fallout, if
+things break when they don’t.</p>
+<p>This idea was rejected because only few developers read the
+documentation, and only a minority is tracking changes of the Python C
+API documentation. The majority of developers are only using CPython and
+so are not aware of compatibility issues with other Python
+implementations.</p>
+<p>Moreover, continuing to allow using macros as l-value does not help the
+HPy project and leaves the burden of emulating them on GraalVM’s Python
+implementation.</p>
+</section>
+<section id="macros-already-modified">
+<h2><a class="toc-backref" href="#macros-already-modified">Macros already modified</a></h2>
+<p>The following C API macros have already been modified to disallow using
+them as l-value:</p>
+<ul class="simple">
+<li><code class="docutils literal notranslate"><span class="pre">PyCell_SET()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyList_SET_ITEM()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">PyTuple_SET_ITEM()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">Py_REFCNT()</span></code> (Python 3.10): <code class="docutils literal notranslate"><span class="pre">Py_SET_REFCNT()</span></code> must be used</li>
+<li><code class="docutils literal notranslate"><span class="pre">_PyGCHead_SET_FINALIZED()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">_PyGCHead_SET_NEXT()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">asdl_seq_GET()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">asdl_seq_GET_UNTYPED()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">asdl_seq_LEN()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">asdl_seq_SET()</span></code></li>
+<li><code class="docutils literal notranslate"><span class="pre">asdl_seq_SET_UNTYPED()</span></code></li>
+</ul>
+<p>For example, <code class="docutils literal notranslate"><span class="pre">PyList_SET_ITEM(list,</span> <span class="pre">0,</span> <span class="pre">item)</span> <span class="pre">&lt;</span> <span class="pre">0</span></code> now fails with a
+compiler error as expected.</p>
+</section>
+<section id="references">
+<h2><a class="toc-backref" href="#references">References</a></h2>
+<ul class="simple">
+<li><a class="reference external" href="https://vstinner.github.io/c-api-abstract-pyobject.html">Python C API: Add functions to access PyObject</a> (October
+2021) article by Victor Stinner</li>
+<li><a class="reference external" href="https://bugs.python.org/issue45476">[C API] Disallow using PyFloat_AS_DOUBLE() as l-value</a>
+(October 2021)</li>
+<li><a class="reference external" href="https://mail.python.org/archives/list/capi-sig&#64;python.org/thread/WGRLTHTHC32DQTACPPX36TPR2GLJAFRB/">[capi-sig] Py_TYPE() and Py_SIZE() become static inline functions</a>
+(September 2021)</li>
+<li><a class="reference external" href="https://bugs.python.org/issue39573">[C API] Avoid accessing PyObject and PyVarObject members directly: add Py_SET_TYPE() and Py_IS_TYPE(), disallow Py_TYPE(obj)=type</a> (February 2020)</li>
+<li><a class="reference external" href="https://bugs.python.org/issue30459">bpo-30459: PyList_SET_ITEM  could be safer</a> (May 2017)</li>
+</ul>
+</section>
+<section id="copyright">
+<h2><a class="toc-backref" href="#copyright">Copyright</a></h2>
+<p>This document is placed in the public domain or under the
+CC0-1.0-Universal license, whichever is more permissive.</p>
+</section>
+</section>
+<p>Source: <a class="reference external" href="https://github.com/python/peps/blob/master/pep-0674.rst">https://github.com/python/peps/blob/master/pep-0674.rst</a></p>
+<p>Last modified: <a class="reference external" href="https://github.com/python/peps/commits/master/pep-0674.rst">2021-12-02 16:57:02 GMT</a></p>
+
+        </article>
+        <nav id="pep-sidebar">
+            <h2>Contents</h2>
+            <ul>
+<li><a class="reference internal" href="#">PEP 674 – Disallow using macros as l-value</a><ul>
+<li><a class="reference internal" href="#contents">Contents</a></li>
+<li><a class="reference internal" href="#abstract">Abstract</a></li>
+<li><a class="reference internal" href="#rationale">Rationale</a><ul>
+<li><a class="reference internal" href="#using-a-macro-as-a-l-value">Using a macro as a l-value</a></li>
+<li><a class="reference internal" href="#cpython-nogil-fork">CPython nogil fork</a></li>
+<li><a class="reference internal" href="#hpy-project">HPy project</a></li>
+<li><a class="reference internal" href="#graalvm-python">GraalVM Python</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#specification">Specification</a><ul>
+<li><a class="reference internal" href="#disallow-using-macros-as-l-value">Disallow using macros as l-value</a><ul>
+<li><a class="reference internal" href="#pyobject-and-pyvarobject-macros">PyObject and PyVarObject macros</a></li>
+<li><a class="reference internal" href="#get-macros">“GET” macros</a></li>
+<li><a class="reference internal" href="#as-macros">“AS” macros</a></li>
+<li><a class="reference internal" href="#pyunicode-macros">PyUnicode macros</a></li>
+<li><a class="reference internal" href="#pydatetime-get-macros">PyDateTime “GET” macros</a></li>
+<li><a class="reference internal" href="#pydescr-macros">PyDescr macros</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#port-c-extensions-to-python-3-11">Port C extensions to Python 3.11</a></li>
+<li><a class="reference internal" href="#pytuple-get-item-and-pylist-get-item">PyTuple_GET_ITEM() and PyList_GET_ITEM()</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#backwards-compatibility">Backwards Compatibility</a></li>
+<li><a class="reference internal" href="#rejected-idea-leave-the-macros-as-they-are">Rejected Idea: Leave the macros as they are</a></li>
+<li><a class="reference internal" href="#macros-already-modified">Macros already modified</a></li>
+<li><a class="reference internal" href="#references">References</a></li>
+<li><a class="reference internal" href="#copyright">Copyright</a></li>
+</ul>
+</li>
+</ul>
+
+            <br />
+            <strong><a href="https://github.com/python/peps/blob/master/pep-0674.rst">Page Source (GitHub)</a></strong>
+        </nav>
+    </section>
+    <script src="../_static/doctools.js"></script>
+</body>
+</html>
